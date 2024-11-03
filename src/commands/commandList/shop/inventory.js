@@ -37,8 +37,6 @@ module.exports = new CommandInterface({
 	six: 500,
 
 	execute: async function (p) {
-		let msg = p.msg;
-
 		/* {emoji,id,count} */
 		let promises = await Promise.all([
 			ringUtil.getItems(p),
@@ -51,9 +49,9 @@ module.exports = new CommandInterface({
 		]);
 		let inv = addToString(promises);
 
-		let text = '**====== ' + msg.author.username + "'s Inventory ======**\n" + inv;
+		let text = '**====== ' + p.getName() + "'s Inventory ======**\n" + inv;
 		if (inv == '') text = 'Your inventory is empty :c';
-		text = alterInventory.alter(p, text, { user: p.msg.author, inv });
+		text = await alterInventory.alter(p, text, { user: p.msg.author, inv });
 		p.send(text);
 	},
 });
@@ -85,14 +83,11 @@ function addToString(items) {
 	let count = 0;
 	for (let i = 0; i < items.length; i++) {
 		let item = items[i];
-		text +=
-			'`' +
-			(item.id < 10 ? '0' : '') +
-			(item.id < 100 ? '0' : '') +
-			item.id +
-			'`' +
-			item.emoji +
-			shopUtil.toSmallNum(item.count, digits);
+		let itemId = (item.id < 10 ? '0' : '') + (item.id < 100 ? '0' : '') + item.id;
+		if (item.id == 200) {
+			itemId = '2--';
+		}
+		text += '`' + itemId + '`' + item.emoji + shopUtil.toSmallNum(item.count, digits);
 		count++;
 		if (count == 4) {
 			text += '\n';

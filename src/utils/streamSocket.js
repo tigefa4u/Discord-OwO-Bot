@@ -25,7 +25,8 @@ class StreamSocket {
 			console.log('StreamSocket connected');
 		});
 		this.socket.on('connect_error', (_error) => {
-			console.error('StreamSocket connect_error');
+			// silence for now
+			//console.error('StreamSocket connect_error');
 		});
 	}
 
@@ -35,6 +36,7 @@ class StreamSocket {
 			user: {
 				id: author.id,
 				username: author.username,
+				globalname: author.globalname,
 				discriminator: author.discriminator,
 			},
 		});

@@ -70,7 +70,7 @@ module.exports = new CommandInterface({
 			all = true;
 
 			// owo upg duration lvl
-		} else if ((args[1] && 'lvl' == args[1].toLowerCase()) || 'level' == args[1].toLowerCase()) {
+		} else if (['lvl', 'level'].includes(args[1]?.toLowerCase())) {
 			if (args[0]) {
 				trait = traits[args[0].toLowerCase()];
 			}
@@ -144,9 +144,7 @@ module.exports = new CommandInterface({
 			await p.query(sql);
 		}
 
-		let text = `**🛠 | ${
-			msg.author.username
-		}**, You successfully upgraded \`${trait}\` with  **${p.global.toFancyNum(
+		let text = `**🛠 | ${p.getName()}**, You successfully upgraded \`${trait}\` with  **${p.global.toFancyNum(
 			count
 		)} Animal Essence** ${essence}!`;
 		text += `\n**<:blank:427371936482328596> |** \`${trait}: ${stat.stat + stat.prefix} -  Lvl ${

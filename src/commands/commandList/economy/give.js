@@ -10,6 +10,8 @@ const CommandInterface = require('../../CommandInterface.js');
 const alterGive = require('../patreon/alterGive.js');
 const cowoncyUtils = require('./utils/cowoncyUtils.js');
 
+const ongoingTransactions = {};
+
 const agree = '✅';
 const decline = '❎';
 const spacer = '                                                               ';
@@ -38,12 +40,26 @@ module.exports = new CommandInterface({
 		let { amount, user, error } = await parseArgs.bind(this)();
 		if (error) return;
 
-		if (!(await checkLimit.bind(this)(user, amount))) return;
+		let message;
+		try {
+			if (!(await checkLimit.bind(this)(user, amount))) {
+				return;
+			}
 
-		const message = await confirmation.bind(this)(user, amount);
-		if (!message) return;
+			message = await confirmation.bind(this)(user, amount);
+			if (!message) {
+				return;
+			}
 
-		if (!(await sendMoney.bind(this)(user, amount))) return;
+			if (!(await sendMoney.bind(this)(user, amount, message))) {
+				removeOngoing(this.msg.author.id, user.id);
+				return;
+			}
+		} catch (err) {
+			console.error(err);
+		} finally {
+			removeOngoing(this.msg.author.id, user.id);
+		}
 
 		await sendMsg.bind(this)(user, amount, message);
 
@@ -82,11 +98,11 @@ async function parseArgs() {
 	} else if (user.id == this.msg.author.id) {
 		this.send(
 			'**💳 | ' +
-				this.msg.author.username +
+				this.getTag() +
 				'** sent **' +
 				this.global.toFancyNum(amount) +
 				' cowoncy** to... **' +
-				user.username +
+				this.getTag(user) +
 				'**... *but... why?*'
 		);
 		return { error: true };
@@ -95,13 +111,38 @@ async function parseArgs() {
 	return { user, amount };
 }
 
-async function sendMoney(user, amount) {
+async function sendMoney(user, amount, message) {
+	let ongoingUser = checkOngoing(this.msg.author, user);
+	if (ongoingUser) {
+		this.errorMsg(`, ${this.getTag(ongoingUser)} already has an ongoing cowoncy transaction!`);
+		return false;
+	}
+	addOngoing(this.msg.author.id, user.id);
+
 	const con = await this.startTransaction();
 	try {
-		const canGive = await cowoncyUtils.canGive.bind(this)(this.msg.author, user, amount, con);
+		const canGive = await cowoncyUtils.canGive.bind(this)(this.msg.author, user, amount, con, {
+			skipCowoncyCheck: true,
+			isTransaction: true,
+		});
 		if (canGive.error) {
-			this.errorMsg(canGive.error);
 			await con.rollback();
+			const text = await alterGive.alter(this, this.msg.author.id, null, {
+				from: this.msg.author,
+				to: user,
+				amount: this.global.toFancyNum(amount),
+				...canGive,
+			});
+			if (text) {
+				if (text.embed) {
+					message.edit({ content: '', embed: text.embed, components: [] });
+				} else {
+					message.edit({ content: text, embed: null, components: [] });
+				}
+			} else {
+				this.errorMsg(canGive.error);
+			}
+			removeOngoing(this.msg.author.id, user.id);
 			return false;
 		}
 
@@ -112,26 +153,43 @@ async function sendMoney(user, amount) {
 		let result = await con.query(sql);
 
 		if (!result[0].changedRows) {
-			this.errorMsg(", you silly hooman! You don't have enough cowoncy!", 3000);
 			await con.rollback();
+			const text = await alterGive.alter(this, this.msg.author.id, null, {
+				from: this.msg.author,
+				to: user,
+				amount: this.global.toFancyNum(amount),
+				none: true,
+			});
+			if (text) {
+				if (text.embed) {
+					message.edit({ content: '', embed: text.embed, components: [] });
+				} else {
+					message.edit({ content: text, embed: null, components: [] });
+				}
+			} else {
+				this.errorMsg(", you silly hooman! You don't have enough cowoncy!", 3000);
+			}
+			removeOngoing(this.msg.author.id, user.id);
 			return false;
 		}
 
 		await con.commit();
+		removeOngoing(this.msg.author.id, user.id);
 		return true;
 	} catch (err) {
 		console.error(err);
 		this.errorMsg(', there was an error sending cowoncy! Please try again later.', 3000);
 		await con.rollback();
+		removeOngoing(this.msg.author.id, user.id);
 		return false;
 	}
 }
 
 async function sendMsg(user, amount, message) {
-	let text = `**💳 | ${this.msg.author.username}** sent **${this.global.toFancyNum(
+	let text = `**💳 | ${this.getTag()}** sent **${this.global.toFancyNum(
 		amount
-	)} cowoncy** to **${user.username}**!`;
-	text = alterGive.alter(this, this.msg.author.id, text, {
+	)} cowoncy** to **${this.getTag(user)}**!`;
+	text = await alterGive.alter(this, this.msg.author.id, text, {
 		from: this.msg.author,
 		to: user,
 		amount: this.global.toFancyNum(amount),
@@ -155,20 +213,15 @@ async function confirmation(user, amount) {
 		description:
 			`\nTo confirm this transaction, click ${agree} Confirm.` +
 			`\nTo cancel this transaction, click ${decline} Cancel.` +
-			`\n\n${this.config.emoji.warning} *It is against our rules to trade cowoncy for anything of monetary value. This includes real money, crypto, nitro, or anything similar. You will be* ***banned*** *for doing so.*`,
+			`\n\n${this.config.emoji.warning} *It is against our rules to trade cowoncy for anything of monetary value. This includes real money, crypto, nitro, or anything similar. You will be* ***banned*** *for doing so.*` +
+			`\n\n**<@${this.msg.author.id}> will give <@${user.id}>:**` +
+			`\n\`\`\`fix\n${this.global.toFancyNum(amount)} cowoncy${spacer}\n\`\`\``,
 		color: this.config.embed_color,
 		timestamp: new Date(),
 		author: {
-			name: `${this.msg.author.username}#${this.msg.author.discriminator}, you are about to give cowoncy to ${user.username}#${user.discriminator}`,
+			name: `${this.getName()}, you are about to give cowoncy to ${this.getName(user)}`,
 			icon_url: this.msg.author.avatarURL,
 		},
-		fields: [
-			{
-				name: `${this.msg.author.username}#${this.msg.author.discriminator} will give ${user.username}#${user.discriminator}:`,
-				value: `\`\`\`fix\n${this.global.toFancyNum(amount)} cowoncy${spacer}\n\`\`\``,
-				inline: true,
-			},
-		],
 	};
 
 	let components = [
@@ -211,26 +264,26 @@ async function confirmation(user, amount) {
 
 	return new Promise((res, _rej) => {
 		const accepted = {};
-		collector.on('collect', async (component, reactionUser, ack, _err) => {
+		collector.on('collect', async (component, reactionMember, ack, _err) => {
 			if (component === 'give_decline') {
 				collector.stop('done');
 				content.embed.color = this.config.fail_color;
 				content.components[0].components[0].disabled = true;
 				content.components[0].components[1].disabled = true;
-				content.content = `**${reactionUser.username}** declined the transaction`;
+				content.content = `**${this.getName(reactionMember)}** declined the transaction`;
 				await ack(content);
 				res(false);
 			} else {
-				if (accepted[reactionUser.id]) {
+				if (accepted[reactionMember.id]) {
 					return;
 				}
-				accepted[reactionUser.id] = true;
+				accepted[reactionMember.id] = true;
 				const usernames = [];
 				for (let key in accepted) {
 					if (key === this.msg.author.id) {
-						usernames.push(this.msg.author.username + '#' + this.msg.author.discriminator);
+						usernames.push(this.getName());
 					} else if (key === user.id) {
-						usernames.push(user.username + '#' + user.discriminator);
+						usernames.push(this.getName(user));
 					}
 				}
 				content.embed.footer = {
@@ -270,8 +323,38 @@ async function confirmation(user, amount) {
 async function checkLimit(user, amount) {
 	const canGive = await cowoncyUtils.canGive.bind(this)(this.msg.author, user, amount, this);
 	if (canGive.error) {
-		this.errorMsg(canGive.error);
+		const text = await alterGive.alter(this, this.msg.author.id, null, {
+			from: this.msg.author,
+			to: user,
+			amount: this.global.toFancyNum(amount),
+			...canGive,
+		});
+		if (text) {
+			this.send(text);
+		} else {
+			this.errorMsg(canGive.error);
+		}
 		return false;
 	}
 	return true;
+}
+
+function addOngoing(user1, user2) {
+	ongoingTransactions[user1] = true;
+	ongoingTransactions[user2] = true;
+}
+
+function removeOngoing(user1, user2) {
+	delete ongoingTransactions[user1];
+	delete ongoingTransactions[user2];
+}
+
+function checkOngoing(user1, user2) {
+	if (ongoingTransactions[user1.id]) {
+		return user1;
+	}
+	if (ongoingTransactions[user2.id]) {
+		return user2;
+	}
+	return false;
 }

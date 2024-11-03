@@ -67,7 +67,7 @@ class Lxv extends Collectible {
 	async manualMerge(p) {
 		const { redis, msg } = p;
 		let count = (await p.redis.hget(`data_${p.msg.author.id}`, this.data)) || 0;
-		if (!count) {
+		if (parseInt(count) <= 0) {
 			p.errorMsg(', You need at least one lxv to pet the hedge!');
 			return;
 		}
@@ -90,7 +90,7 @@ class Lxv extends Collectible {
 			super.manualMerge(p);
 		} else {
 			p.send(
-				`${this.emoji} **| ${p.msg.author.username}** pats the hedge. But it seems to have made them mad...` +
+				`${this.emoji} **| ${p.getName()}** pats the hedge. But it seems to have made them mad...` +
 					'\n<:826054135518199818:1055044683396562984> **|** They are very angry now. Mind your fingers!'
 			);
 		}

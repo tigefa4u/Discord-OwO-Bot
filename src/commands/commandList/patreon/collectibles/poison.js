@@ -16,7 +16,7 @@ class Poison extends Collectible {
 		this.owners = ['665417324949405706'];
 		this.fullControl = true;
 		this.ownerOnly = false;
-		this.dailyReceiveOnly = true;
+		this.dailyOnly = true;
 		this.giveAmount = 2;
 		this.description =
 			"Love could be labeled poison and we'd drink it anyways.\n\nSubcommands: owo poison mix";
@@ -75,7 +75,7 @@ class Poison extends Collectible {
 		}
 
 		const msg = msgOverride
-			.replaceAll('?user?', p.msg.author.username)
+			.replaceAll('?user?', p.getName())
 			.replaceAll('?emoji?', this.emoji)
 			.replaceAll('?blank?', p.config.emoji.blank)
 			.replaceAll('?mergeCount?', result2)
